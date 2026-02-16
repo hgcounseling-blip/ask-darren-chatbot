@@ -30,4 +30,21 @@ export async function POST(req: Request) {
       process.env.SYSTEM_PROMPT || "You are a helpful assistant.";
 
     const completion = await client.chat.completions.create({
-      mo
+      model,
+      messages: [{ role: "system", content: systemPrompt }, ...safeMessages],
+    });
+
+    const reply =
+      completion.choices?.[0]?.message?.content?.trim() ||
+      "I didn’t get that—could you say it a different way?";
+
+    return Response.json({ reply });
+  } catch (err: any) {
+    const msg =
+      err?.message ||
+      err?.error?.message ||
+      (typeof err === "string" ? err : JSON.stringify(err));
+
+    return Response.json({ reply: "ERROR: " + msg }, { status: 500 });
+  }
+}
