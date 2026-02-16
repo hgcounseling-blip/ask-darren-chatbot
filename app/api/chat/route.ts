@@ -25,11 +25,9 @@ function looksLikeSelfHarm(text: string): boolean {
     /\bcommit\s+suicide\b/i,
   ];
 
-  // Quick direct triggers
   if (strongPhrases.some((p) => t.includes(p))) return true;
   if (strongRegex.some((r) => r.test(t))) return true;
 
-  // Risk scoring for fuzzier cases
   let score = 0;
   if (t.includes("hurt myself")) score += 2;
   if (t.includes("self harm") || t.includes("self-harm")) score += 2;
@@ -40,6 +38,14 @@ function looksLikeSelfHarm(text: string): boolean {
 
 export async function POST(req: Request) {
   try {
+    if (!process.env.OPENAI_API_KEY) {
+      console.error("Missing OPENAI_API_KEY. Add it to .env.local and restart dev.");
+      return Response.json(
+        { reply: "Server misconfigured: OPENAI_API_KEY is missing." },
+        { status: 500 }
+      );
+    }
+
     const body = await req.json();
     const messages = Array.isArray(body?.messages) ? body.messages : [];
 
@@ -62,21 +68,29 @@ export async function POST(req: Request) {
 
     const model = process.env.OPENAI_MODEL || "gpt-4.1-mini";
 
-    const response = await client.responses.create({
+    const completion = await client.chat.completions.create({
       model,
-      instructions: process.env.SYSTEM_PROMPT || "You are a helpful assistant.",
-      input: safeMessages,
+      messages: [
+        {
+          role: "system",
+          content: process.env.SYSTEM_PROMPT || "You are a helpful assistant.",
+        },
+        ...safeMessages,
+      ],
     });
 
     const reply =
-      (response as any).output_text ||
+      completion.choices?.[0]?.message?.content ||
       "I didn’t get that—could you say it a different way?";
 
     return Response.json({ reply });
+
   } catch (err: any) {
-    return Response.json(
-      { reply: "Sorry—something went wrong on the server." },
-      { status: 500 }
-    );
+    const msg =
+      err?.message ||
+      err?.error?.message ||
+      (typeof err === "string" ? err : JSON.stringify(err));
+    return Response.json({ reply: "ERROR: " + msg }, { status: 500 });
   }
 }
+
