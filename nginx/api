@@ -1,0 +1,83 @@
+import OpenAI from "openai";
+
+const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+
+function looksLikeSelfHarm(text: string): boolean {
+    const t = (text || "").toLowerCase();
+
+    const strongPhrases = [
+        "kill myself",
+        "end my life",
+        "suicide",
+        "want to die",
+        "i want to die",
+    ];
+
+    const strongRegex = [/\bcommit\s+suicide\b/i];
+
+    if (strongPhrases.some((p) => t.includes(p))) return true;
+    if (strongRegex.some((r) => r.test(t))) return true;
+
+    let score = 0;
+    if (t.includes("hurt myself")) score += 2;
+    if (t.includes("self harm") || t.includes("self-harm")) score += 2;
+    if (t.includes("cut myself") || t.includes("cutting")) score += 2;
+    if (t.includes("overdose")) score += 2;
+
+    return score >= 3;
+}
+
+export async function POST(req: Request) {
+    try {
+        if (!process.env.OPENAI_API_KEY) {
+            console.error("Missing OPENAI_API_KEY.");
+            return Response.json(
+                { reply: "Server misconfigured: OPENAI_API_KEY is missing." },
+                { status: 500 }
+            );
+        }
+
+        const body = await req.json();
+        const messages = Array.isArray(body?.messages) ? body.messages : [];
+
+        const safeMessages = messages
+            .filter(
+                (m: any) =>
+                    m &&
+                    (m.role === "user" || m.role === "assistant") &&
+                    typeof m.content === "string"
+            )
+            .slice(-16);
+
+        const lastUser = [...safeMessages].reverse().find((m: any) => m.role === "user");
+        if (lastUser?.content && looksLikeSelfHarm(lastUser.content)) {
+            return Response.json({
+                reply:
+                    "I'm really sorry you're feeling this way. If you're in immediate danger or might act on these thoughts, call 988 (US) or your local emergency number right now. If you want, tell me where you are and whether you're safe at this moment.",
+            });
+        }
+
+        const model = process.env.OPENAI_MODEL || "gpt-4.1-mini";
+        const systemPrompt = process.env.SYSTEM_PROMPT || "You are a helpful assistant.";
+
+        const completion = await client.chat.completions.create({
+            model,
+            messages: [{ role: "system", content: systemPrompt }, ...safeMessages],
+        });
+
+        const reply =
+            completion.choices?.[0]?.message?.content?.trim() ||
+            "I didn't get that—could you say it a different way?";
+
+        return Response.json({ reply });
+    } catch (err: any) {
+        const msg =
+            err?.message ||
+            err?.error?.message ||
+            (typeof err === "string" ? err : JSON.stringify(err));
+        console.error("API error:", msg);
+        return Response.json({ reply: "ERROR: " + msg }, { status: 500 });
+    }
+}git add .
+git commit -m "Fix chat route"
+git push
