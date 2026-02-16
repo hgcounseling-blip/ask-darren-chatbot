@@ -1,14 +1,14 @@
 import OpenAI from "openai";
 
-const client = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
+export const runtime = "nodejs";
+
+const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 export async function POST(req: Request) {
   try {
     if (!process.env.OPENAI_API_KEY) {
       return Response.json(
-        { reply: "Server misconfigured: OPENAI_API_KEY is missing." },
+        { reply: "Server misconfigured: OPENAI_API_KEY is missing in Vercel." },
         { status: 500 }
       );
     }
@@ -23,15 +23,18 @@ export async function POST(req: Request) {
           (m.role === "user" || m.role === "assistant") &&
           typeof m.content === "string"
       )
-      .slice(-16);
+      .slice(-16)
+      .map((m: any) => ({ role: m.role, content: m.content }));
 
     const model = process.env.OPENAI_MODEL || "gpt-4.1-mini";
     const systemPrompt =
-      process.env.SYSTEM_PROMPT || "You are a helpful assistant.";
+      process.env.SYSTEM_PROMPT ||
+      "You are Darren McKinnis’s relationship and marriage advice chatbot. Be warm, calm, practical, non-shaming.";
 
     const completion = await client.chat.completions.create({
       model,
       messages: [{ role: "system", content: systemPrompt }, ...safeMessages],
+      temperature: 0.7,
     });
 
     const reply =
@@ -40,11 +43,7 @@ export async function POST(req: Request) {
 
     return Response.json({ reply });
   } catch (err: any) {
-    const msg =
-      err?.message ||
-      err?.error?.message ||
-      (typeof err === "string" ? err : JSON.stringify(err));
-
+    const msg = err?.message || String(err);
     return Response.json({ reply: "ERROR: " + msg }, { status: 500 });
   }
 }
