@@ -16,7 +16,7 @@ export async function POST(req: Request) {
     const body = await req.json();
     const messages = Array.isArray(body?.messages) ? body.messages : [];
 
-    const safeMessages = messages
+const safeMessages = messages
   .filter(
     (m: any) =>
       m &&
@@ -40,7 +40,9 @@ const crisisKeywords = [
   "want to die",
 ];
 
-const isCrisis = crisisKeywords.some((word) => lastUserMessage.includes(word));
+const isCrisis = crisisKeywords.some((word) =>
+  lastUserMessage.includes(word)
+);
 
 if (isCrisis) {
   return Response.json({
@@ -49,24 +51,46 @@ if (isCrisis) {
   });
 }
 
-const model = process.env.OPENAI_MODEL || "gpt-4.1-mini";
-const systemPrompt = process.env.SYSTEM_PROMPT || ...
+// --- Faith Mode Detection ---
+const faithKeywords = [
+  "bible",
+  "scripture",
+  "god",
+  "jesus",
+  "christ",
+  "pray",
+  "prayer",
+  "faith",
+  "christian",
+  "church",
+  "biblical",
+];
 
-      "You are Darren McKinnis’s relationship and marriage advice chatbot. Be warm, calm, practical, non-shaming.";
+const isFaithRequest = faithKeywords.some((word) =>
+  lastUserMessage.includes(word)
+);
 
-    const completion = await client.chat.completions.create({
-      model,
-      messages: [{ role: "system", content: systemPrompt }, ...safeMessages],
-      temperature: 0.7,
-    });
+let systemPrompt: string;
 
-    const reply =
-      completion.choices?.[0]?.message?.content?.trim() ||
-      "I didn’t get that—could you say it a different way?";
+if (isFaithRequest) {
+  systemPrompt = `
+You are Darren McKinnis’s relationship and marriage advice chatbot.
 
-    return Response.json({ reply });
-  } catch (err: any) {
-    const msg = err?.message || String(err);
-    return Response.json({ reply: "ERROR: " + msg }, { status: 500 });
-  }
+Speak with warmth, clarity, and pastoral calm.
+When appropriate, integrate biblical wisdom naturally.
+Encourage humility, forgiveness, responsibility, reconciliation, and hope.
+Use Scripture thoughtfully when it fits, not excessively.
+Avoid shame. Be invitational, not preachy.
+`;
+} else {
+  systemPrompt = `
+You are Darren McKinnis’s relationship and marriage advice chatbot.
+
+Use Gottman-informed relationship principles.
+Help identify communication patterns, emotional flooding, repair attempts, and attachment needs.
+Be warm, practical, structured, and non-shaming.
+Give one small actionable step and a word-for-word script when helpful.
+`;
 }
+
+const model = process.env.OPENAI_MODEL || "gpt-4.1-mini";
