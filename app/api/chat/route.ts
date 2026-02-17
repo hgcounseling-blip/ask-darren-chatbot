@@ -1,146 +1,209 @@
-import OpenAI from "openai";
+"use client";
 
-export const runtime = "nodejs";
+import React, { useEffect, useMemo, useState } from "react";
 
-const client = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
+type Role = "user" | "assistant";
+type ChatMessage = { role: Role; content: string };
 
-export async function POST(req: Request) {
-  try {
-    // =============================
-    // 🔐 API Key Check
-    // =============================
-    if (!process.env.OPENAI_API_KEY) {
-      return Response.json(
-        { reply: "Server misconfigured: OPENAI_API_KEY is missing in Vercel." },
-        { status: 500 }
-      );
+const STORAGE_KEY = "askDarrenMessages";
+
+const DEFAULT_GREETING: ChatMessage = {
+  role: "assistant",
+  content: "Hey — I’m here. What’s going on in the relationship right now?",
+};
+
+export default function Home() {
+  const [messages, setMessages] = useState<ChatMessage[]>([DEFAULT_GREETING]);
+  const [input, setInput] = useState("");
+  const [isSending, setIsSending] = useState(false);
+
+  // Load saved chat on first render
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem(STORAGE_KEY);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          setMessages(parsed);
+        }
+      }
+    } catch {
+      // ignore corrupt storage
     }
+  }, []);
 
-    // =============================
-    // 📩 Parse Request
-    // =============================
-    const body = await req.json();
-    const messages = Array.isArray(body?.messages) ? body.messages : [];
+  // Save chat whenever messages change
+  useEffect(() => {
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(messages));
+    } catch {
+      // ignore quota/errors
+    }
+  }, [messages]);
 
-    const safeMessages = messages
-      .filter(
-        (m: any) =>
-          m &&
-          (m.role === "user" || m.role === "assistant") &&
-          typeof m.content === "string"
-      )
-      .slice(-16)
-      .map((m: any) => ({
-        role: m.role,
-        content: m.content,
-      }));
+  const canSend = useMemo(() => input.trim().length > 0 && !isSending, [input, isSending]);
 
-    const lastUserMessage =
-      safeMessages[safeMessages.length - 1]?.content?.toLowerCase() || "";
+  const handleClear = () => {
+    setMessages([DEFAULT_GREETING]);
+    setInput("");
+    try {
+      localStorage.removeItem(STORAGE_KEY);
+    } catch {}
+  };
 
-    // =============================
-    // 🚨 Crisis Override
-    // =============================
-    const crisisKeywords = [
-      "suicide",
-      "kill myself",
-      "end my life",
-      "self harm",
-      "hurt myself",
-      "don't want to live",
-      "want to die",
-    ];
+  const handleSend = async () => {
+    if (!input.trim() || isSending) return;
 
-    const isCrisis = crisisKeywords.some((word) =>
-      lastUserMessage.includes(word)
-    );
+    const userText = input.trim();
+    const nextMessages: ChatMessage[] = [...messages, { role: "user", content: userText }];
 
-    if (isCrisis) {
-      return Response.json({
-        reply:
-          "I’m really glad you said something. If you are in immediate danger, please call 911 right now or go to your nearest emergency room. You can also call or text 988 in the United States to reach the Suicide & Crisis Lifeline. You don’t have to carry this alone — real people are available 24/7.",
+    setMessages(nextMessages);
+    setInput("");
+    setIsSending(true);
+
+    try {
+      const res = await fetch("/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ messages: nextMessages }),
       });
+
+      // Read once safely (handles HTML error pages too)
+      const text = await res.text();
+
+      let data: any = null;
+      try {
+        data = text ? JSON.parse(text) : null;
+      } catch {
+        data = { reply: `Server returned non-JSON (${res.status}): ${text.slice(0, 200)}` };
+      }
+
+      if (!res.ok) {
+        throw new Error(data?.reply || `Request failed (${res.status})`);
+      }
+
+      const reply: string =
+        (typeof data?.reply === "string" && data.reply.trim()) ||
+        "I didn’t get that—could you say it a different way?";
+
+      setMessages((prev) => [...prev, { role: "assistant", content: reply }]);
+    } catch (err: any) {
+      const msg = err?.message || "Unknown error";
+      setMessages((prev) => [
+        ...prev,
+        { role: "assistant", content: `ERROR: ${msg}` },
+      ]);
+    } finally {
+      setIsSending(false);
     }
+  };
 
-    // =============================
-    // ✝️ Faith Mode Detection
-    // =============================
-    const faithKeywords = [
-      "bible",
-      "scripture",
-      "god",
-      "jesus",
-      "christ",
-      "pray",
-      "prayer",
-      "faith",
-      "christian",
-      "church",
-      "biblical",
-    ];
-
-    const isFaithRequest = faithKeywords.some((word) =>
-      lastUserMessage.includes(word)
-    );
-
-    // =============================
-    // 🧠 Dynamic System Prompt
-    // =============================
-    let systemPrompt: string;
-
-    if (isFaithRequest) {
-      systemPrompt = `
-You are Darren McKinnis’s relationship and marriage advice chatbot.
-
-Speak with warmth and pastoral clarity.
-Validate briefly, then move toward reconciliation and repair.
-Encourage humility and ownership before focusing on the other person.
-Emphasize forgiveness, repentance, and restoration.
-
-Offer ONE small repair action that starts with ownership (naming your tone, part, or regret) before requesting a conversation.
-If helpful, include a 1–2 sentence script that includes: (1) ownership, (2) care, (3) a simple ask.
-
-Be invitational but not passive.
-End with one forward-focused question.
-`;
-    } else {
-      systemPrompt = `
-You are Darren McKinnis’s relationship and marriage advice chatbot.
-
-Use Gottman-informed relationship principles.
-Validate briefly, then move toward repair.
-Name escalation patterns when present (criticism, defensiveness, flooding, shutdown).
-Encourage ownership before blame.
-
-Offer ONE small repair action that starts with ownership (naming your tone, part, or regret) before requesting a conversation.
-If helpful, include a 1–2 sentence script that includes: (1) ownership, (2) care, (3) a simple ask.
-
-Be warm, calm, direct, and non-shaming.
-End with one forward-focused question.
-`;
+  const onKeyDown: React.KeyboardEventHandler<HTMLTextAreaElement> = (e) => {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      handleSend();
     }
+  };
 
-    // =============================
-    // 🤖 OpenAI Call
-    // =============================
-    const model = process.env.OPENAI_MODEL || "gpt-4.1-mini";
+  return (
+    <main style={{ maxWidth: 820, margin: "0 auto", padding: 16, fontFamily: "system-ui, -apple-system, Segoe UI, Roboto, Arial" }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
+        <h1 style={{ margin: 0, fontSize: 22 }}>Ask Darren</h1>
 
-    const completion = await client.chat.completions.create({
-      model,
-      messages: [{ role: "system", content: systemPrompt }, ...safeMessages],
-      temperature: 0.7,
-    });
+        <button
+          type="button"
+          onClick={handleClear}
+          disabled={isSending}
+          style={{
+            padding: "8px 12px",
+            borderRadius: 10,
+            border: "1px solid #ddd",
+            background: "#fff",
+            cursor: isSending ? "not-allowed" : "pointer",
+          }}
+        >
+          Clear chat
+        </button>
+      </div>
 
-    const reply =
-      completion.choices?.[0]?.message?.content?.trim() ||
-      "I didn’t get that—could you say it a different way?";
+      <div
+        style={{
+          marginTop: 12,
+          border: "1px solid #e5e5e5",
+          borderRadius: 14,
+          padding: 12,
+          minHeight: 420,
+          background: "#fafafa",
+        }}
+      >
+        {messages.map((m, i) => {
+          const isUser = m.role === "user";
+          return (
+            <div
+              key={i}
+              style={{
+                display: "flex",
+                justifyContent: isUser ? "flex-end" : "flex-start",
+                margin: "10px 0",
+              }}
+            >
+              <div
+                style={{
+                  maxWidth: "78%",
+                  whiteSpace: "pre-wrap",
+                  padding: "10px 12px",
+                  borderRadius: 14,
+                  border: "1px solid #e0e0e0",
+                  background: isUser ? "#ffffff" : "#f2f2f2",
+                }}
+              >
+                {!isUser && (
+                  <div style={{ fontSize: 12, opacity: 0.7, marginBottom: 6 }}>Darren</div>
+                )}
+                {m.content}
+              </div>
+            </div>
+          );
+        })}
+      </div>
 
-    return Response.json({ reply });
-  } catch (err: any) {
-    const msg = err?.message || String(err);
-    return Response.json({ reply: "ERROR: " + msg }, { status: 500 });
-  }
+      <div style={{ marginTop: 12, display: "flex", gap: 10 }}>
+        <textarea
+          value={input}
+          onChange={(e) => setInput(e.target.value)}
+          onKeyDown={onKeyDown}
+          placeholder="Type your message…"
+          rows={2}
+          style={{
+            flex: 1,
+            padding: 12,
+            borderRadius: 14,
+            border: "1px solid #ddd",
+            resize: "none",
+            outline: "none",
+          }}
+        />
+
+        <button
+          type="button"
+          onClick={handleSend}
+          disabled={!canSend}
+          style={{
+            padding: "0 16px",
+            borderRadius: 14,
+            border: "1px solid #ddd",
+            background: canSend ? "#fff" : "#f4f4f4",
+            cursor: canSend ? "pointer" : "not-allowed",
+            minWidth: 92,
+          }}
+        >
+          {isSending ? "Sending…" : "Send"}
+        </button>
+      </div>
+
+      <div style={{ marginTop: 10, fontSize: 12, opacity: 0.7 }}>
+        Tip: Press Enter to send, Shift+Enter for a new line.
+      </div>
+    </main>
+  );
 }
-
