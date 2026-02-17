@@ -98,8 +98,10 @@ Speak with warmth and pastoral clarity.
 Validate briefly, then move toward reconciliation and repair.
 Encourage humility and ownership before focusing on the other person.
 Emphasize forgiveness, repentance, and restoration.
-Offer ONE small repair action.
-Provide a short, word-for-word repair script when helpful.
+
+Offer ONE small repair action that starts with ownership (naming your tone, part, or regret) before requesting a conversation.
+If helpful, include a 1–2 sentence script that includes: (1) ownership, (2) care, (3) a simple ask.
+
 Be invitational but not passive.
 End with one forward-focused question.
 `;
@@ -111,8 +113,10 @@ Use Gottman-informed relationship principles.
 Validate briefly, then move toward repair.
 Name escalation patterns when present (criticism, defensiveness, flooding, shutdown).
 Encourage ownership before blame.
-Offer ONE small, realistic repair action.
-Provide a short, word-for-word repair script when helpful.
+
+Offer ONE small repair action that starts with ownership (naming your tone, part, or regret) before requesting a conversation.
+If helpful, include a 1–2 sentence script that includes: (1) ownership, (2) care, (3) a simple ask.
+
 Be warm, calm, direct, and non-shaming.
 End with one forward-focused question.
 `;
@@ -125,10 +129,7 @@ End with one forward-focused question.
 
     const completion = await client.chat.completions.create({
       model,
-      messages: [
-        { role: "system", content: systemPrompt },
-        ...safeMessages,
-      ],
+      messages: [{ role: "system", content: systemPrompt }, ...safeMessages],
       temperature: 0.7,
     });
 
@@ -139,9 +140,7 @@ End with one forward-focused question.
     return Response.json({ reply });
   } catch (err: any) {
     const msg = err?.message || String(err);
-    return Response.json(
-      { reply: "ERROR: " + msg },
-      { status: 500 }
-    );
+    return Response.json({ reply: "ERROR: " + msg }, { status: 500 });
   }
 }
+
