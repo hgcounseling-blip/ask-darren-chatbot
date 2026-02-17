@@ -39,7 +39,8 @@ export default function Home() {
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data?.error || `Request failed (${res.status})`);
 
-      const assistantText = data?.message?.content ?? "Sorry — I didn’t get a response. Try again.";
+      const assistantText = data?.reply ?? "Sorry — I didn’t get a response. Try again.";
+
       setMessages((prev) => [...prev, { role: "assistant", content: assistantText }]);
     } catch (e: any) {
       setError(e?.message ?? "Something went wrong.");
